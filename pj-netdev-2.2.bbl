@@ -1,0 +1,15 @@
+\begin{thebibliography}{}
+
+\bibitem[\protect\citeauthoryear{Tausanovitch}{2016}]{smartnic2016}
+Nick Tausanovitch
+\newblock 2016.
+\newblock {\em SmartNICs: Give your OpenStack network a boost}
+\newblock https://www.infoworld.com/article/3125022/networking/smartnics-give-your-openstack-network-a-boost.html
+
+\bibitem[\protect\citeauthoryear{Borkmann}{2017}]{borkmann2017}
+Daniel Borkmann
+\newblock 2017.
+\newblock {\em bpf: add meta pointer for direct access}.
+\newblock https://www.spinics.net/lists/netdev/msg456525.html
+
+\end{thebibliography}

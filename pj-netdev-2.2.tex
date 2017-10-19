@@ -51,10 +51,10 @@ This paper will focus on proposed changes to eBPF and XDP for the following:
 
 \section{HW Offloaded Hints From Device Driver} 
 
-Network hardware already computes a large number of offloads today. Future network hardware, especially with the emergence of SmartNICs (REFERENCE!!), will provide even more in terms of offloaded computations. Harnessing this metadata will be crucial to allow more complex eBPF and XDP programs to stay as perfomant as possible.
+Network hardware already computes a large number of offloads today. Future network hardware, especially with the emergence of SmartNICs \cite{smartnic2016}, will provide even more in terms of offloaded computations. Harnessing this metadata will be crucial to allow more complex eBPF and XDP programs to stay as perfomant as possible.
 \newline
 \newline
-The rest of this paper discusses proposed changes to the XDP core that are built on patches from Daniel Borkman (REFERENCE!!), adding a metadata section to the existing xdp\_buff structure in the Linux kernel. Prior to these patches, an xdp\_buff consisted of the following:
+The rest of this paper discusses proposed changes to the XDP core that are built on patches from Daniel Borkman \cite{borkmann2017}, adding a metadata section to the existing xdp\_buff structure in the Linux kernel. Prior to these patches, an xdp\_buff consisted of the following:
 \newline
 \newline
 struct xdp\_buff \{
@@ -89,26 +89,23 @@ struct xdp\_buff \{
 \caption{xdp\_buff layout with metadata}
 \label{xdp-metadata-layout}
 \end{figure}
+
 The new xdp\_buff field, "data\_meta", can be used to point at opaque data sitting inside the headroom in the xdp\_buff memory, prior to the DMA'd packet buffer. This can be seen in Figure \ref{xdp-metadata-layout}. This headroom can then be parsed using proposed eBPF helper functions to extract the HW-based hints from the driver, and then be used in the business logic of the XDP programs.
 
 \subsection{Initial Performance Gains}
 
+Initial performance gains are very promising using HW-based hints. In benchmarks with proof-of-concept patches, where hints are memcpy()'d from the Rx descriptor into the XDP buffer headroom, two XDP programs were used to demonstrate the gains.
+\newline
+\indent Two programs, XDP3 and XDP\_HINTS, were written to demonstrate the usage of hints. This is compared to the in-kernel XDP1 sample program, designed to parse the packet headers and then drop all traffic.  XDP3 is a copy of XDP1, however it performs no parsing at all. This is to demonstrate the smallest XDP program to take a packet and immediately drop it.  XDP\_HINTS is a modified version of XDP1, where instead of parsing packet data, it consumes metadata from the xdp\_buff provided by the base driver, and then drops the packet. In other words, it performs no packet parsing, but just makes decisions based off metadata.
+\newline
+\indent Data in Figure \ref {xdp-performance} was collected on an Ivy Bridge-class Xeon platform as the target machine. As seen in the chart, XDP1 with JIT runs at approximately 7.3 million packets/second. XDP3, with no packet parsing but with JIT, runs at approximately 22 million packets/second. XDP\_HINTS, which performs no packet parsing, but uses the HW-provided hints in the XDP metadata, also runs at 22 million packets/second. From this data with simple programs, we can see that removing the packet parsing to make a drop decision yields almost 3x in performance of XDP drop using HW-provided hints.
+\newline
+\indent How this metadata is expressed in the xdp\_buff is something the community will need to agree on moving forward. The next sections propose various approaches in how to express and consume this metadata, along with recommendations for each approach.
 \begin{figure}[h]
 \includegraphics[width=3.31in]{xdp-programs-performance.png}
 \caption{XDP With and Without HW Hints}
 \label{xdp-performance}
 \end{figure}
-
-Initial performance gains are very promising using HW-based hints. In benchmarks with proof-of-concept patches, where hints are memcpy()'d from the Rx descriptor into the XDP buffer headroom, two XDP programs were used to demonstrate the gains.
-\newline
-\newline
-Two programs, XDP3 and XDP\_HINTS, were written to demonstrate the usage of hints. This is compared to the in-kernel XDP1 sample program, designed to parse the packet headers and then drop all traffic.  XDP3 is a copy of XDP1, however it performs no parsing at all. This is to demonstrate the smallest XDP program to take a packet and immediately drop it.  XDP\_HINTS is a modified version of XDP1, where instead of parsing packet data, it consumes metadata from the xdp\_buff provided by the base driver, and then drops the packet. In other words, it performs no packet parsing, but just makes decisions based off metadata.
-\newline
-\newline
-Data in Figure \ref {xdp-performance} was collected on an Ivy Bridge-class Xeon platform as the target machine. As seen in the chart, XDP1 with JIT runs at approximately 7.3 million packets/second. XDP3, with no packet parsing but with JIT, runs at approximately 22 million packets/second. XDP\_HINTS, which performs no packet parsing, but uses the HW-provided hints in the XDP metadata, also runs at 22 million packets/second. From this data with simple programs, we can see that removing the packet parsing to make a drop decision yields almost 3x in performance of XDP drop using HW-provided hints.
-\newline
-\newline
-How this metadata is expressed in the xdp\_buff is something the community will need to agree on moving forward. The next sections propose various approaches in how to express and consume this metadata, along with recommendations for each approach.
 
 \subsection{Implementation Approach 1: Common Metadata Structure}
 
@@ -116,7 +113,9 @@ The most obvious approach to passing metadata through the xdp\_buff is to have a
 
 \subsection{Implementation Approach 2: Vendor Logic in eBPF Libraries}
 
-TBD
+A different approach of processing metadata passed from a driver to the XDP core is to provide vendor-specific helper functions in the eBPF libraries in userspace. In this approach, a helper function such as bpf\_get\_hints() could then derive the underlying hardware, and call the vendor-specific hints-retrieval helper function. The main advantage to this approach is no kernel-level ABI is imposed through UAPI, so each vendor controls how the metadata is packed into the xdp\_buff. This approach can also provide a software fallback mechanism, in the case the underlying hardware doesn't provide the requested hints.
+\newline
+\indent However, the disadvantage to this approach is it requires eBPF and XDP programs to have knowledge of the underlying hardware they're running on. This introduces a requirement on XDP and eBPF that hasn't existed previously, where the program models avoided knowing or relying on specific hardware to operate.
 
 \subsection{Implementation Approach 3: Chained XDP Programs With Helper Functions}
 
