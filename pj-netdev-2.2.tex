@@ -30,7 +30,7 @@ As XDP workloads continue to evolve, they are becoming more complex.  They can p
 
 This talk will focus on efforts to extend the XDP framework to pass HW-based hints that have been computed by the underlying network device.  The intent is to build a framework that is vendor agnostic, so XDP programs don't need to comprehend the underlying device they're running against.
 
-This talk also aims to show a proposed direction for the changes in XDP, along with the proposed additional metadata structure.  It will also show benchmarks of certain XDP workloads with and without HW-based hints, highlighting the benefits of using these existing offloads.
+Finally, this talk will propose different directions for the changes in XDP, along with the proposed additional metadata structures.  It will also show benchmarks of certain XDP workloads with and without HW-based hints, highlighting the benefits of using these existing offloads.
 \end{abstract}
 
 \section{Keywords}
@@ -51,7 +51,7 @@ This paper will focus on proposed changes to eBPF and XDP for the following:
 
 \section{HW Offloaded Hints From Device Driver} 
 
-Network hardware already computes a large number of offloads today. Future network hardware, especially with the emergence of SmartNICs \cite{smartnic2016}, will provide even more in terms of offloaded computations. Harnessing this metadata will be crucial to allow more complex eBPF and XDP programs to stay as perfomant as possible.
+Network hardware already computes a large number of offloads today. Future network hardware, especially with the emergence of SmartNICs \cite{smartnic2016}, will provide even more in terms of offloaded computations. Harnessing this metadata will be crucial to allow more complex eBPF and XDP programs to stay as performant as possible.
 \newline
 \newline
 The rest of this paper discusses proposed changes to the XDP core that are built on patches from Daniel Borkman \cite{borkmann2017}, adding a metadata section to the existing xdp\_buff structure in the Linux kernel. Prior to these patches, an xdp\_buff consisted of the following:
@@ -90,7 +90,7 @@ struct xdp\_buff \{
 \label{xdp-metadata-layout}
 \end{figure}
 
-The new xdp\_buff field, "data\_meta", can be used to point at opaque data sitting inside the headroom in the xdp\_buff memory, prior to the DMA'd packet buffer. This can be seen in Figure \ref{xdp-metadata-layout}. This headroom can then be parsed using proposed eBPF helper functions to extract the HW-based hints from the driver, and then be used in the business logic of the XDP programs.
+The new xdp\_buff field, "data\_meta", can be used to point at opaque data sitting inside the headroom in the xdp\_buff memory, prior to the DMA'd packet buffer. Referring to Figure \ref{xdp-metadata-layout}, this headroom can then be parsed using proposed eBPF helper functions to extract the HW-based hints from the driver. These hints can then be used in the business logic of the XDP programs.
 
 \subsection{Initial Performance Gains}
 
@@ -119,7 +119,16 @@ A different approach of processing metadata passed from a driver to the XDP core
 
 \subsection{Implementation Approach 3: Chained XDP Programs With Helper Functions}
 
-TBD
+Another approach to process metadata from the driver to the XDP core is to chain multiple XDP programs together. The first XDP program would be attached either to the whole device driver, or to a specific Rx queue (see section Express Hints via eBPF Sections). As seen in (INSERT FIGURE), this initial XDP program would have the device-specific knowledge to translate the metadata passed through the XDP headroom from the driver. Acting as a shim program, it would then call the larger XDP program where the business logic resides. However, the larger XDP program would not require any device-specific knowledge, and would use new eBPF helper functions to extract the processed metadata from the first XDP program.
+\newline
+\indent This approach is still under investigation as a viable solution as of the writing of this paper. Open items needing design are:
+\begin{itemize}
+\item The dynamic updating of a jump table if a user wishes to update the business-logic XDP program downstream of the shim XDP program
+\item Defining what all of the helpers would be (e.g. bpf\_get\_rxhash(), bfp\_get\_ptype(), etc.)
+\item Defining how the data from the shim XDP progam would be presented to the downstream XDP program
+\item Measure the performance impact of chaining programs together for XDP, versus running all in one contained eBPF program
+\end{itemize}
+As these items are developed and tested, our intent is to provide these patches for RFC to the upstream community.
 
 \section{Dynamic Programming of HW Hints}
 
@@ -133,13 +142,8 @@ TBD
 
 TBD
 
-\subsection{XDP Per Queue}
-
-TBD
-
-
 \section{Conclusion}
-Utilizing smarter network device offloads is going to be crucial in maximizing the performance and efficiency of XDP programs.  As these XDP programs become more and more complex with packet processing and parsing, the natural direction is to utilize network devices as they become smarter.  However, the expression of the hints from hardware, and programming of the underlying hardware to present the hints, is something the Linux kernel network community will need to work together on to best design a sustainable and scalable model.
+As XDP programs become more and more complex with packet processing and parsing, the natural direction is to utilize as many offloads to maximize efficiency and performance. And with network hardware becoming smarter and more flexible, these offloads and their programmability will fit the needs of XDP's evolution towards this goal. However, the expression of the hints from hardware, and programming of the underlying hardware to present the hints, is something the Linux kernel network community will need to work together on to best design a sustainable and scalable model.
 
 \section{Acknowledgments}
 We would like to acknowledge the NetDev 2.2 selection committee for inviting us to submit and present this paper.
@@ -151,12 +155,12 @@ We would like to acknowledge the NetDev 2.2 selection committee for inviting us 
 Peter Waskiewicz Jr (PJ) is a Senior Linux Kernel Engineer in the Networking Division of Intel's Communications Group. He has maintained and helped create the igb, ixgbe, and i40e wired Ethernet network drivers, the initial Tx multiqueue support in the Linux kernel network stack, and added Data Center Bridging support to the Linux kernel. He also worked in Intel's Open Source Technology Center on the x86 kernel tree, enabling advanced features in the Broadwell and Skylake microarchitectures. Prior to returning to Intel, PJ was a Senior Principal Engineer at NetApp in the SolidFire division, where he was the chief Linux kernel and networking architect for the SolidFire scale-out cloud storage platform.
 \newline
 \newline
-Anjali Singhai Jain is 
+Anjali Singhai Jain
 \newline
 \newline
-Neerav Parikh is
+Neerav Parikh
 \newline
 \newline
-Parthasarathy Sarangam is
+Parthasarathy Sarangam
 
 \end{document}
