@@ -119,8 +119,14 @@ A different approach of processing metadata passed from a driver to the XDP core
 
 \subsection{Implementation Approach 3: Chained XDP Programs With Helper Functions}
 
-Another approach to process metadata from the driver to the XDP core is to chain multiple XDP programs together. The first XDP program would be attached either to the whole device driver, or to a specific Rx queue (see section Express Hints via eBPF Sections). As seen in (INSERT FIGURE), this initial XDP program would have the device-specific knowledge to translate the metadata passed through the XDP headroom from the driver. Acting as a shim program, it would then call the larger XDP program where the business logic resides. However, the larger XDP program would not require any device-specific knowledge, and would use new eBPF helper functions to extract the processed metadata from the first XDP program.
-\newline
+Another approach to process metadata from the driver to the XDP core is to chain multiple XDP programs together. The first XDP program would be attached either to the whole device driver, or to a specific Rx queue (see section Express Hints via eBPF Sections). As seen in Figure \ref{xdp-chained-programs}, this initial XDP program would have the device-specific knowledge to translate the metadata passed through the XDP headroom from the driver. Acting as a shim program, it would then call the larger XDP program where the business logic resides. However, the larger XDP program would not require any device-specific knowledge, and would use new eBPF helper functions to extract the processed metadata from the first XDP program.
+
+\begin{figure}[h]
+\includegraphics[width=3.31in]{xdp-chained-programs.png}
+\caption{Chained XDP Programs}
+\label{xdp-chained-programs}
+\end{figure}
+
 \indent This approach is still under investigation as a viable solution as of the writing of this paper. Open items needing design are:
 \begin{itemize}
 \item The dynamic updating of a jump table if a user wishes to update the business-logic XDP program downstream of the shim XDP program
@@ -132,15 +138,104 @@ As these items are developed and tested, our intent is to provide these patches 
 
 \section{Dynamic Programming of HW Hints}
 
-TBD
+As SmartNICs become more available and flexible, having a robust and flexible mechanism to program them is crucial. Today, some offloads and flow match actions can be programmed using \textit{tc} and/or \textit{devlink}. However, these mechanisms currently do not have queue-level granularity to program a flow, nor do they currently have mechanisms to attach an eBPF program to consume the HW hints being requested. While the support for this can be added to these existing tools over time as SmartNICs continue to mature, we believe that also expressing the HW hints that would be most useful to XDP and broader eBPF programs should be expressed as part of the eBPF program itself.
 
 \subsection{Using tc}
 
-TBD
+The \textit{tc} framework has had hardware-offload support added over the past few years. These mechanisms can be expressed via \textit{tc-flower} for known fields in a flow, or \textit{tc-u32} for unnamed offsets within a flow. These can be utilized to program an underlying Rx pipeline in hardware to match fields in flows, and then provide the HW hints that can be utilized by the attached eBPF/XDP programs. However, there are two areas requiring investigation to provide the flexibility that will be needed to fully utilize the SmartNICs.
+\newline
+\indent A SmartNIC may have the flexibility to aggregate Rx queues into groups, or even into single queues, with various offloads. Consider Receive-Side Scaling (RSS), where one may wish to have separate RSS domains for different queue groups, based on different match criteria. For example, if one flow is a tunneled 6-in-4 flow (IPv6 inside IPv4), one may wish to match that flow signature in hardware, and direct it to a specific set of RSS queues for further offloading/hashing. However, if another flow is identified as a non-tunneled IPv6 flow, one may wish to match that flow signature in a different set of RSS queues for further processing. In order to utilize \textit{tc} for this level of granularity, the framework will need to comprehend how to program a single queue in the Rx pipeline, or a set of queues in that same pipeline, while programming the match criteria within \textit{tc-flower} or \textit{tc-u32}.
+\newline
+\indent The next step past programming the underlying Rx pipeline to generate match criteria and resulting metadata is how to utilize it within an attached eBPF/XDP program. While programming the Rx pipeline can help manage the offloads and flow segragation across the Rx queues, the provided metadata needs to be expressed in such a way that the underlying XDP programs can understand and parse. Since this mechanism of programming the Rx pipeline using \textit{tc} is completely separate and disjoint from the actual eBPF programs running against the device, coordination between these two layers may be very difficult. In addition, when the XDP core and framework is evolved to utilize an XDP program per-Rx queue, programming this Rx pipeline per-queue, or per-queue group, can become quite messy to coordinate with which XDP program will be running on which queues. This issue of coordination is dealt with using an alternate approach in the next section.
 
 \subsection{Express Hints via eBPF Sections}
 
-TBD
+An alternate approach this paper proposes for programming the Rx pipeline for HW-based hint extraction is to express the desired hints via new eBPF program sections. These would be part of the eBPF program itself that is loading against a device, queue group, or queue, and would provide the necessary information to a device driver to program the pipelines. This would also have the direct benefit that the eBPF program that is programming the Rx pipeline has direct knowledge of which HW-based hints should be coming across from the underlying driver.
+\newline
+\indent A goal of this approach should also be to keep this interface as vendor-agnostic as possible. In other words, the hints themselves could start with a known base set of desirable hints (more on this below), allowing an eBPF program to load on any hardware. This would provide the ability for software to still compute a hint that is needed for the eBPF/XDP program's execution, but the underlying hardware isn't capable of providing that specific hint. This would be a software-fallback mode. This part of the proposal is still in its infancy as of the writing of this paper.
+\newline
+\indent Another approach to keep the business logic of the eBPF program vendor-agnostic, while providing the pipeline programming via eBPF, is to utilize the previously described HW-hints implementation proposal, Chained XDP Programs With Helper Functions. This approach would allow any hardware-specific logic potentially required for Rx pipeline programming to be contained in the shim XDP program, and then that program would also know exactly which hints to extract and send to the business-logic XDP program.
+\newline
+\newline
+The following examples are proposals of what the new eBPF sections would look like:
+\newline
+\newline
+\underline{Example 1: RSS hash definition and extraction:}
+\newline
+\newline
+struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_hash = \{
+\newline
+\indent .type = RSS\_HASH,
+\newline
+\indent .size = sizeof(\_\_u32),
+\newline
+\indent /* It may be a good idea to also specify in some form
+\newline
+\indent  * the fields that should be used for computing the hash.
+\newline
+\indent  * Example: Inner-most L3 src addr and L4 src port
+\newline
+\indent  */
+\newline
+\indent .fields = \{ INNER\_L3\_SRC, INNER\_L4\_SRC\},
+\newline
+\indent .mask = \{0x00ffff, 0xffff\},
+\newline
+\indent .key = \{xyz123\},
+\newline
+\};
+\newline
+\newline
+\underline{Example 2: Packet-type identification and extraction:}
+\newline
+\newline
+/* PTYPE values should be agreed upon between the
+\newline
+ * SW and the HW providing the hints. The driver
+\newline
+ * may have to do the translation between the two.
+\newline
+ */
+\newline
+struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_ptype = \{
+\newline
+\indent .type = PTYPE,
+\newline
+\indent .size = sizeof(\_\_u16),
+\newline
+\};
+\newline
+\newline
+\underline{Example 3: Packet match resulting in action or map offload:}
+\newline
+\newline
+struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_match = \{
+\newline
+\indent .type = PACKET\_MATCH,
+\newline
+\indent .fields = \{PTYPE, INNER\_L3\_SRC, INNER\_L4\_SRC\},
+\newline
+\indent .mask = \{0xff, 0.0.ff.ff, 0xffff\},
+\newline
+\indent .value = \{0x10, 10.10.20.2, 65\},
+\newline
+\indent /* This hint adds a match rule into HW, which creates a
+\newline
+\indent  * SW-defined result when HW finds a match
+\newline
+\indent  */
+\newline
+\indent .result = 25,
+\newline
+\indent .size = sizeof(\_\_u32),
+\newline
+\};
+\newline
+\newline
+\indent The following table is a proposed starting point for well-known hints to program and utilize in eBPF programs:
+TODO: ADD LATEX TABLE
+\newline
+\indent In order for this eBPF-based Rx pipeline programming to work, it would need to touch the entire eBPF toolchain. LLVM/clang would need to know how to lay out the new ELF sections, and then the kernel verifier and loader would need to understand how to pull these ELF sections out of the main program. A new .ndo\_ops field may need to be added for the eBPF loader to call a network driver to load the Rx pipeline sections, however this is still under discussion as of the writing of this paper. Once the basic concepts are agreed upon for the general direction, RFC patches will be provided to the Linux Netdev community.
 
 \section{Conclusion}
 As XDP programs become more and more complex with packet processing and parsing, the natural direction is to utilize as many offloads to maximize efficiency and performance. And with network hardware becoming smarter and more flexible, these offloads and their programmability will fit the needs of XDP's evolution towards this goal. However, the expression of the hints from hardware, and programming of the underlying hardware to present the hints, is something the Linux kernel network community will need to work together on to best design a sustainable and scalable model.
