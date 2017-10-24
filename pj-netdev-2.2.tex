@@ -8,6 +8,8 @@
 \usepackage{helvet}
 \usepackage{courier}
 \usepackage[numbers]{natbib}
+\usepackage[normalem]{ulem}
+\useunder{\uline}{\ul}{}
 \pdfinfo{
 /Title (Accelerating XDP Programs Using HW-based Hints)
 /Author (Peter P. Waskiewicz Jr)}
@@ -54,10 +56,10 @@ This paper will focus on proposed changes to eBPF and XDP for the following:
 Network hardware already computes a large number of offloads today. Future network hardware, especially with the emergence of SmartNICs \cite{smartnic2016}, will provide even more in terms of offloaded computations. Harnessing this metadata will be crucial to allow more complex eBPF and XDP programs to stay as performant as possible.
 \newline
 \newline
-The rest of this paper discusses proposed changes to the XDP core that are built on patches from Daniel Borkman \cite{borkmann2017}, adding a metadata section to the existing xdp\_buff structure in the Linux kernel. Prior to these patches, an xdp\_buff consisted of the following:
+The rest of this paper discusses proposed changes to the XDP core that are built on patches from Daniel Borkman \cite{borkmann2017}, adding a metadata section to the existing {\small \texttt{xdp\_buff}} structure in the Linux kernel. Prior to these patches, an {\small \texttt{xdp\_buff}} consisted of the following:
 \newline
 \newline
-struct xdp\_buff \{
+{\scriptsize \texttt{struct xdp\_buff \{
 \newline
 \indent{void *data;}
 \newline
@@ -66,12 +68,13 @@ struct xdp\_buff \{
 \indent{void *data\_hard\_start;}
 \newline
 \}
+}}
 \newline
 \newline
 After the patches, the structure now looks like this:
 \newline
 \newline
-struct xdp\_buff \{
+{\scriptsize \texttt{struct xdp\_buff \{
 \newline
 \indent{void *data;}
 \newline
@@ -82,6 +85,7 @@ struct xdp\_buff \{
 \indent{void *data\_meta;}
 \newline
 \}
+}}
 \newline
 
 \begin{figure}[h]
@@ -90,17 +94,17 @@ struct xdp\_buff \{
 \label{xdp-metadata-layout}
 \end{figure}
 
-The new xdp\_buff field, "data\_meta", can be used to point at opaque data sitting inside the headroom in the xdp\_buff memory, prior to the DMA'd packet buffer. Referring to Figure \ref{xdp-metadata-layout}, this headroom can then be parsed using proposed eBPF helper functions to extract the HW-based hints from the driver. These hints can then be used in the business logic of the XDP programs.
+The new {\small \texttt{xdp\_buff}} field, {\small \texttt{"data\_meta"}}, can be used to point at opaque data sitting inside the headroom in the {\small \texttt{xdp\_buff}} memory, prior to the DMA'd packet buffer. Referring to Figure \ref{xdp-metadata-layout}, this headroom can then be parsed using proposed eBPF helper functions to extract the HW-based hints from the driver. These hints can then be used in the business logic of the XDP programs.
 
 \subsection{Initial Performance Gains}
 
-Initial performance gains are very promising using HW-based hints. In benchmarks with proof-of-concept patches, where hints are memcpy()'d from the Rx descriptor into the XDP buffer headroom, two XDP programs were used to demonstrate the gains.
+Initial performance gains are very promising using HW-based hints. In benchmarks with proof-of-concept patches, where hints are {\small \texttt{memcpy()}}'d from the Rx descriptor into the XDP buffer headroom, two XDP programs were used to demonstrate the gains.
 \newline
-\indent Two programs, XDP3 and XDP\_HINTS, were written to demonstrate the usage of hints. This is compared to the in-kernel XDP1 sample program, designed to parse the packet headers and then drop all traffic.  XDP3 is a copy of XDP1, however it performs no parsing at all. This is to demonstrate the smallest XDP program to take a packet and immediately drop it.  XDP\_HINTS is a modified version of XDP1, where instead of parsing packet data, it consumes metadata from the xdp\_buff provided by the base driver, and then drops the packet. In other words, it performs no packet parsing, but just makes decisions based off metadata.
+\indent Two programs, XDP3 and XDP\_HINTS, were written to demonstrate the usage of hints. This is compared to the in-kernel XDP1 sample program, designed to parse the packet headers and then drop all traffic.  XDP3 is a copy of XDP1, however it performs no parsing at all. This is to demonstrate the smallest XDP program to take a packet and immediately drop it.  XDP\_HINTS is a modified version of XDP1, where instead of parsing packet data, it consumes metadata from the {\small \texttt{xdp\_buff}} provided by the base driver, and then drops the packet. In other words, it performs no packet parsing, but just makes decisions based off metadata.
 \newline
 \indent Data in Figure \ref {xdp-performance} was collected on an Ivy Bridge-class Xeon platform as the target machine. As seen in the chart, XDP1 with JIT runs at approximately 7.3 million packets/second. XDP3, with no packet parsing but with JIT, runs at approximately 22 million packets/second. XDP\_HINTS, which performs no packet parsing, but uses the HW-provided hints in the XDP metadata, also runs at 22 million packets/second. From this data with simple programs, we can see that removing the packet parsing to make a drop decision yields almost 3x in performance of XDP drop using HW-provided hints.
 \newline
-\indent How this metadata is expressed in the xdp\_buff is something the community will need to agree on moving forward. The next sections propose various approaches in how to express and consume this metadata, along with recommendations for each approach.
+\indent How this metadata is expressed in the {\small \texttt{xdp\_buff}} is something the community will need to agree on moving forward. The next sections propose various approaches in how to express and consume this metadata, along with recommendations for each approach.
 \begin{figure}[h]
 \includegraphics[width=3.31in]{xdp-programs-performance.png}
 \caption{XDP With and Without HW Hints}
@@ -109,17 +113,17 @@ Initial performance gains are very promising using HW-based hints. In benchmarks
 
 \subsection{Implementation Approach 1: Common Metadata Structure}
 
-The most obvious approach to passing metadata through the xdp\_buff is to have a kernel structure that is defined to carry the data itself. This would be something each network driver would need to implement to translate HW offloads into the structure. While this would provide a vendor-agnostic solution to represent data, it imposes ABI restrictions to the XDP metadata core. Vendors would need to agree on this structure, and then this would become part of the UAPI, which means it cannot change once it is established, aside from additions. This rigidity of the interface, plus trying to have all vendors agree on a common structure to express specific hardware behaviors, is not a model believed to be sustainable moving forward.
+The most obvious approach to passing metadata through the {\small \texttt{xdp\_buff}} is to have a kernel structure that is defined to carry the data itself. This would be something each network driver would need to implement to translate HW offloads into the structure. While this would provide a vendor-agnostic solution to represent data, it imposes ABI restrictions to the XDP metadata core. Vendors would need to agree on this structure, and then this would become part of the UAPI, which means it cannot change once it is established, aside from additions. This rigidity of the interface, plus trying to have all vendors agree on a common structure to express specific hardware behaviors, is not a model believed to be sustainable moving forward.
 
 \subsection{Implementation Approach 2: Vendor Logic in eBPF Libraries}
 
-A different approach of processing metadata passed from a driver to the XDP core is to provide vendor-specific helper functions in the eBPF libraries in userspace. In this approach, a helper function such as bpf\_get\_hints() could then derive the underlying hardware, and call the vendor-specific hints-retrieval helper function. The main advantage to this approach is no kernel-level ABI is imposed through UAPI, so each vendor controls how the metadata is packed into the xdp\_buff. This approach can also provide a software fallback mechanism, in the case the underlying hardware doesn't provide the requested hints.
+A different approach of processing metadata passed from a driver to the XDP core is to provide vendor-specific helper functions in the eBPF libraries in userspace. In this approach, a helper function such as {\small \texttt{bpf\_get\_hints()}} could then derive the underlying hardware, and call the vendor-specific hints-retrieval helper function. The main advantage to this approach is no kernel-level ABI is imposed through UAPI, so each vendor controls how the metadata is packed into the {\small \texttt{xdp\_buff}}. This approach can also provide a software fallback mechanism, in the case the underlying hardware doesn't provide the requested hints.
 \newline
 \indent However, the disadvantage to this approach is it requires eBPF and XDP programs to have knowledge of the underlying hardware they're running on. This introduces a requirement on XDP and eBPF that hasn't existed previously, where the program models avoided knowing or relying on specific hardware to operate.
 
 \subsection{Implementation Approach 3: Chained XDP Programs With Helper Functions}
 
-Another approach to process metadata from the driver to the XDP core is to chain multiple XDP programs together. The first XDP program would be attached either to the whole device driver, or to a specific Rx queue (see section Express Hints via eBPF Sections). As seen in Figure \ref{xdp-chained-programs}, this initial XDP program would have the device-specific knowledge to translate the metadata passed through the XDP headroom from the driver. Acting as a shim program, it would then call the larger XDP program where the business logic resides. However, the larger XDP program would not require any device-specific knowledge, and would use new eBPF helper functions to extract the processed metadata from the first XDP program.
+Another approach to process metadata from the driver to the XDP core is to chain multiple XDP programs together. The first XDP program would be attached either to the whole device driver, or to a specific Rx queue (see section \textit{Express Hints via eBPF Sections}). As seen in Figure \ref{xdp-chained-programs}, this initial XDP program would have the device-specific knowledge to translate the metadata passed through the XDP headroom from the driver. Acting as a shim program, it would then call the larger XDP program where the business logic resides. However, the larger XDP program would not require any device-specific knowledge, and would use new eBPF helper functions to extract the processed metadata from the first XDP program.
 
 \begin{figure}[h]
 \includegraphics[width=3.31in]{xdp-chained-programs.png}
@@ -130,7 +134,7 @@ Another approach to process metadata from the driver to the XDP core is to chain
 \indent This approach is still under investigation as a viable solution as of the writing of this paper. Open items needing design are:
 \begin{itemize}
 \item The dynamic updating of a jump table if a user wishes to update the business-logic XDP program downstream of the shim XDP program
-\item Defining what all of the helpers would be (e.g. bpf\_get\_rxhash(), bfp\_get\_ptype(), etc.)
+\item Defining what all of the helpers would be (e.g. {\small \texttt{bpf\_get\_rxhash()}}, {\small \texttt{bfp\_get\_ptype()}}, etc.)
 \item Defining how the data from the shim XDP progam would be presented to the downstream XDP program
 \item Measure the performance impact of chaining programs together for XDP, versus running all in one contained eBPF program
 \end{itemize}
@@ -154,16 +158,16 @@ An alternate approach this paper proposes for programming the Rx pipeline for HW
 \newline
 \indent A goal of this approach should also be to keep this interface as vendor-agnostic as possible. In other words, the hints themselves could start with a known base set of desirable hints (more on this below), allowing an eBPF program to load on any hardware. This would provide the ability for software to still compute a hint that is needed for the eBPF/XDP program's execution, but the underlying hardware isn't capable of providing that specific hint. This would be a software-fallback mode. This part of the proposal is still in its infancy as of the writing of this paper.
 \newline
-\indent Another approach to keep the business logic of the eBPF program vendor-agnostic, while providing the pipeline programming via eBPF, is to utilize the previously described HW-hints implementation proposal, Chained XDP Programs With Helper Functions. This approach would allow any hardware-specific logic potentially required for Rx pipeline programming to be contained in the shim XDP program, and then that program would also know exactly which hints to extract and send to the business-logic XDP program.
+\indent Another approach to keep the business logic of the eBPF program vendor-agnostic, while providing the pipeline programming via eBPF, is to utilize the previously described HW-hints implementation proposal, \textit{Chained XDP Programs With Helper Functions}. This approach would allow any hardware-specific logic potentially required for Rx pipeline programming to be contained in the shim XDP program, and then that program would also know exactly which hints to extract and send to the business-logic XDP program.
 \newline
 \newline
 The following examples are proposals of what the new eBPF sections would look like:
 \newline
 \newline
-\underline{Example 1: RSS hash definition and extraction:}
+\textbf{\underline{Example 1: RSS hash definition and extraction:}}
 \newline
 \newline
-struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_hash = \{
+{\scriptsize \texttt{struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_hash = \{
 \newline
 \indent .type = RSS\_HASH,
 \newline
@@ -171,11 +175,13 @@ struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_hash = \{
 \newline
 \indent /* It may be a good idea to also specify in some form
 \newline
-\indent  * the fields that should be used for computing the hash.
+\indent \space * the fields that should be used for computing
 \newline
-\indent  * Example: Inner-most L3 src addr and L4 src port
+\indent \space * the hash.
 \newline
-\indent  */
+\indent \space * Example: Inner-most L3 src addr and L4 src port
+\newline
+\indent \space */
 \newline
 \indent .fields = \{ INNER\_L3\_SRC, INNER\_L4\_SRC\},
 \newline
@@ -184,18 +190,19 @@ struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_hash = \{
 \indent .key = \{xyz123\},
 \newline
 \};
+}}
 \newline
 \newline
-\underline{Example 2: Packet-type identification and extraction:}
+\textbf{\underline{Example 2: Packet-type identification and extraction:}}
 \newline
 \newline
-/* PTYPE values should be agreed upon between the
+{\scriptsize \texttt{/* PTYPE values should be agreed upon between the
 \newline
- * SW and the HW providing the hints. The driver
+\space \space * SW and the HW providing the hints. The driver
 \newline
- * may have to do the translation between the two.
+\space \space * may have to do the translation between the two.
 \newline
- */
+\space \space */
 \newline
 struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_ptype = \{
 \newline
@@ -204,12 +211,13 @@ struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_ptype = \{
 \indent .size = sizeof(\_\_u16),
 \newline
 \};
+}}
 \newline
 \newline
-\underline{Example 3: Packet match resulting in action or map offload:}
+\textbf{\underline{Example 3: Packet match resulting in action or map offload:}}
 \newline
 \newline
-struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_match = \{
+{\scriptsize \texttt{struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_match = \{
 \newline
 \indent .type = PACKET\_MATCH,
 \newline
@@ -221,20 +229,26 @@ struct bpf\_hw\_hints\_def SEC("hw\_hints") rx\_match = \{
 \newline
 \indent /* This hint adds a match rule into HW, which creates a
 \newline
-\indent  * SW-defined result when HW finds a match
+\indent \space * SW-defined result when HW finds a match
 \newline
-\indent  */
+\indent \space */
 \newline
 \indent .result = 25,
 \newline
 \indent .size = sizeof(\_\_u32),
 \newline
 \};
+}}
 \newline
 \newline
-\indent The following table is a proposed starting point for well-known hints to program and utilize in eBPF programs:
-TODO: ADD LATEX TABLE
-\newline
+\indent Figure \ref{xdp-hint-types} is a table of proposed well-known hints to program and utilize in eBPF programs:
+
+\begin{figure}[h]
+\includegraphics[width=3.31in]{xdp-hint-types.png}
+\caption{Proposed HW-Based Hints}
+\label{xdp-hint-types}
+\end{figure}
+
 \indent In order for this eBPF-based Rx pipeline programming to work, it would need to touch the entire eBPF toolchain. LLVM/clang would need to know how to lay out the new ELF sections, and then the kernel verifier and loader would need to understand how to pull these ELF sections out of the main program. A new .ndo\_ops field may need to be added for the eBPF loader to call a network driver to load the Rx pipeline sections, however this is still under discussion as of the writing of this paper. Once the basic concepts are agreed upon for the general direction, RFC patches will be provided to the Linux Netdev community.
 
 \section{Conclusion}
@@ -250,12 +264,12 @@ We would like to acknowledge the NetDev 2.2 selection committee for inviting us 
 Peter Waskiewicz Jr (PJ) is a Senior Linux Kernel Engineer in the Networking Division of Intel's Communications Group. He has maintained and helped create the igb, ixgbe, and i40e wired Ethernet network drivers, the initial Tx multiqueue support in the Linux kernel network stack, and added Data Center Bridging support to the Linux kernel. He also worked in Intel's Open Source Technology Center on the x86 kernel tree, enabling advanced features in the Broadwell and Skylake microarchitectures. Prior to returning to Intel, PJ was a Senior Principal Engineer at NetApp in the SolidFire division, where he was the chief Linux kernel and networking architect for the SolidFire scale-out cloud storage platform.
 \newline
 \newline
-Anjali Singhai Jain
+Anjali Singhai Jain is a Software Architect at Intel's Networking Division. Having worked exclusively in Networking for the past 13 years at Intel, she has seen and contributed towards many generations of Network software Architecture, software implementation, and design of Network Hardware devices. Currently she focuses her work at Intel in defining next-generation silicon features and software programming models.
 \newline
 \newline
-Neerav Parikh
+Neerav Parikh is a Software Architect with Intel's Connectivity Group focusing on Ethernet Networking Software. He has worked on Intel's ixgbe and i40e Linux device drivers, focusing on features related to FCoE, DCB, and QoS. Prior to joining Intel, Neerav worked as a Technical Architect enabling SAS/SATA/FC-based Storage software products.
 \newline
 \newline
-Parthasarathy Sarangam
+Parthasarathy Sarangam is a Senior Principal Engineer with Intel's Connectivity Group.
 
 \end{document}
